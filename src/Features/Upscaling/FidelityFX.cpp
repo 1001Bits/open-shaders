@@ -19,6 +19,14 @@ void FidelityFX::LoadFFX()
 	std::wstring framegenPath = std::wstring(FidelityFX::PluginDir) + L"\\" + framegenDllName;
 	featureFSR3FG = LoadLibrary(framegenPath.c_str());
 
+	// Optional runtime-substitutable upscaler DLL (incl. FSR4 on RDNA4). See RuntimeUpscaler.cpp.
+	std::wstring runtimeUpscalerPath = std::wstring(FidelityFX::PluginDir) + L"\\" + std::wstring(FidelityFX::RuntimeUpscalerDllName);
+	runtimeUpscalerModule = LoadLibrary(runtimeUpscalerPath.c_str());
+	featureRuntimeUpscaler = runtimeUpscalerModule != nullptr;
+	if (featureRuntimeUpscaler) {
+		logger::info("[FidelityFX] Runtime upscaler DLL found and available");
+	}
+
 	// Load loader DLL from plugin directory
 	std::wstring loaderDllName = L"amd_fidelityfx_loader_dx12.dll";
 	std::wstring pluginLoaderPath = std::wstring(FidelityFX::PluginDir) + L"\\" + loaderDllName;
@@ -245,6 +253,13 @@ void FidelityFX::CreateFSRResources()
 {
 	auto state = globals::state;
 
+	// Tear down any live runtime-upscaler contexts/resources so a resolution/mode change
+	// doesn't leave them sized for the previous configuration (see RuntimeUpscaler.cpp).
+	WaitForRuntimeUpscalerIdle();
+	DestroyRuntimeUpscalerContexts(false);
+	DestroyRuntimeUpscalerResources(false);
+	ResetRuntimeUpscalerTracking(true);
+
 	// Prevent multiple allocations
 	if (fsrScratchBuffer) {
 		logger::warn("[FidelityFX] FSR resources already created, skipping allocation");
@@ -333,6 +348,12 @@ void FidelityFX::DestroyFSRResources()
 
 	// Reset crash logging flag when resources are destroyed
 	fsrDispatchCrashLogged = false;
+
+	WaitForRuntimeUpscalerIdle();
+	DestroyRuntimeUpscalerContexts(false);
+	DestroyRuntimeUpscalerResources(false);
+	ResetRuntimeCommandContexts();
+	ResetRuntimeUpscalerTracking(true);
 }
 
 FfxResource ffxGetResource(ID3D11Resource* dx11Resource,
@@ -356,7 +377,6 @@ FfxResource ffxGetResource(ID3D11Resource* dx11Resource,
 void FidelityFX::Upscale(ID3D11Resource* a_upscalingTexture, ID3D11Resource* a_reactiveMask, ID3D11Resource* a_transparencyCompositionMask, ID3D11Resource* a_motionVectors, float a_sharpness, ID3D11Resource* a_colorOut)
 {
 	auto renderer = globals::game::renderer;
-	auto context = globals::d3d::context;
 	auto state = globals::state;
 	auto& depthTexture = renderer->GetDepthStencilData().depthStencils[RE::RENDER_TARGETS_DEPTHSTENCIL::kMAIN];
 
@@ -383,46 +403,15 @@ void FidelityFX::Upscale(ID3D11Resource* a_upscalingTexture, ID3D11Resource* a_r
 			}
 		}
 
-		FfxFsr3DispatchUpscaleDescription dispatchParameters{};
-		dispatchParameters.commandList = ffxGetCommandListDX11(context);
-		dispatchParameters.color = ffxGetResource(r_color, L"FSR3_Input_OutputColor");
-		dispatchParameters.depth = ffxGetResource(r_depth, L"FSR3_InputDepth");
-		dispatchParameters.motionVectors = ffxGetResource(r_mvec, L"FSR3_InputMotionVectors");
-		dispatchParameters.exposure = ffxGetResource(nullptr, L"FSR3_InputExposure");
-		dispatchParameters.upscaleOutput = ffxGetResource(r_output, L"FSR3_OutputColor");
-		dispatchParameters.reactive = ffxGetResource(r_reactive, L"FSR3_InputReactiveMap");
-		dispatchParameters.transparencyAndComposition = ffxGetResource(r_trans, L"FSR3_TransparencyAndCompositionMap");
+		// Per-eye display bounds for VR (screenSize.x covers both eyes side-by-side);
+		// full-screen bounds otherwise, matching r_width's existing per-eye/full split.
+		const uint32_t displayWidth = globals::game::isVR ? (uint32_t)(screenSize.x / 2) : (uint32_t)screenSize.x;
+		const uint32_t displayHeight = (uint32_t)screenSize.y;
 
-		dispatchParameters.motionVectorScale.x = mv_scale_x;
-		dispatchParameters.motionVectorScale.y = renderSize.y;
-		dispatchParameters.renderSize.width = r_width;
-		dispatchParameters.renderSize.height = (uint)renderSize.y;
-
-		dispatchParameters.jitterOffset.x = -jitter.x;
-		dispatchParameters.jitterOffset.y = -jitter.y;
-
-		dispatchParameters.frameTimeDelta = *globals::game::deltaTime * 1000.f;
-		dispatchParameters.cameraFar = *globals::game::cameraFar;
-		dispatchParameters.cameraNear = *globals::game::cameraNear;
-		dispatchParameters.enableSharpening = true;
-		dispatchParameters.sharpness = a_sharpness;
-		dispatchParameters.cameraFovAngleVertical = Util::GetVerticalFOVRad();
-		dispatchParameters.viewSpaceToMetersFactor = 0.01428222656f;
-		// Menus render no motion vectors; camera-derived MVs restore valid reprojection there.
-		// Reset only when that fill couldn't run — accumulating against zero MVs ghosts.
-		dispatchParameters.reset = state->IsMainOrLoadingMenuOpen() && !upscaling.menuCameraMVsValid;
-		dispatchParameters.preExposure = 1.0f;
-		dispatchParameters.flags = 0;
-
-		__try {
-			if (ffxFsr3ContextDispatchUpscale(&fsrContext[contextIndex], &dispatchParameters) != FFX_OK)
-				logger::critical("[FidelityFX] Failed to dispatch upscaling for eye {}!", contextIndex);
-		} __except (EXCEPTION_EXECUTE_HANDLER) {
-			if (!fsrDispatchCrashLogged) {
-				logger::critical("[FidelityFX] FSR3 dispatch crashed for eye {} - this may be caused by RenderDoc capture interfering with FSR operations. Try disabling RenderDoc capture.", contextIndex);
-				fsrDispatchCrashLogged = true;
-			}
-		}
+		if (!UpscaleRegion(contextIndex, r_color, r_depth, r_mvec, r_reactive, r_trans, r_output,
+				r_width, (uint32_t)renderSize.y, displayWidth, displayHeight,
+				mv_scale_x, renderSize.y, a_sharpness))
+			logger::critical("[FidelityFX] Failed to dispatch upscaling for eye {}!", contextIndex);
 
 		if (state->frameAnnotations)
 			state->EndPerfEvent();

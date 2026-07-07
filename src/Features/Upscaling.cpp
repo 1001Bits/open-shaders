@@ -451,6 +451,8 @@ void Upscaling::DrawSettings()
 
 		if (upscaleMethod == UpscaleMethod::kFSR) {
 			ImGui::SliderFloat(T(TKEY("sharpness"), "Sharpness"), &settings.sharpnessFSR, 0.0f, 1.0f, "%.1f");
+			// Rough placement pending a follow-up UI pass; gates FidelityFX::ShouldRequestRuntimeFsr4.
+			ImGui::Checkbox(T(TKEY("fsr4_runtime_enable"), "Use Runtime FSR4 (RDNA4)"), &settings.fsr4RuntimeEnable);
 		} else if (upscaleMethod == UpscaleMethod::kDLSS) {
 			ImGui::SliderFloat(T(TKEY("sharpness"), "Sharpness"), &settings.sharpnessDLSS, 0.0f, 1.0f, "%.1f");
 
