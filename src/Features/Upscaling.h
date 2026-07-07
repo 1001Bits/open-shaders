@@ -87,6 +87,11 @@ public:
 		// resolution to bank VRAM/bandwidth. Boot-locked (changing it re-allocates RTs at world load).
 		// Engages only when ShouldEngagePerfMode() holds; a no-op otherwise (see GetUpscaleMethod area).
 		bool renderAtUpscaleRes = true;
+
+		// Opt in to AMD's runtime-loaded FSR4 upscaler DLL (amd_fidelityfx_upscaler_dx12.dll) on
+		// eligible RDNA4 hardware instead of the host-linked FSR3 SDK. Falls back to FSR3 on any
+		// failure. See FidelityFX::ShouldRequestRuntimeFsr4.
+		bool fsr4RuntimeEnable = false;
 	};
 
 	Settings settings;
