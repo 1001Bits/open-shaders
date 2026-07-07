@@ -451,8 +451,18 @@ void Upscaling::DrawSettings()
 
 		if (upscaleMethod == UpscaleMethod::kFSR) {
 			ImGui::SliderFloat(T(TKEY("sharpness"), "Sharpness"), &settings.sharpnessFSR, 0.0f, 1.0f, "%.1f");
-			// Rough placement pending a follow-up UI pass; gates FidelityFX::ShouldRequestRuntimeFsr4.
-			ImGui::Checkbox(T(TKEY("fsr4_runtime_enable"), "Use Runtime FSR4 (RDNA4)"), &settings.fsr4RuntimeEnable);
+			// Unverified on real RDNA4 hardware -- hidden entirely on ineligible GPUs so it
+			// can't be toggled somewhere it would silently no-op.
+			if (fidelityFX.IsRuntimeFsr4AutoEligible()) {
+				ImGui::Checkbox(T(TKEY("fsr4_runtime_enable"), "Use Runtime FSR4 (RDNA4)"), &settings.fsr4RuntimeEnable);
+				if (settings.fsr4RuntimeEnable) {
+					ImGui::TextDisabled("%s: %s", T(TKEY("fsr4_active_path"), "Active path"), fidelityFX.GetDisplayedFsrPathLabel().c_str());
+					if (fidelityFX.IsRuntimeFsr4FailureLatched())
+						ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", T(TKEY("fsr4_failed_fallback"), "Runtime FSR4 failed this session -- using FSR3 fallback."));
+					else if (fidelityFX.IsRuntimeUpscalerFailureLatched())
+						ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", T(TKEY("fsr4_runtime_failed_fallback"), "Runtime upscaler DLL failed this session -- using host FSR3 SDK."));
+				}
+			}
 		} else if (upscaleMethod == UpscaleMethod::kDLSS) {
 			ImGui::SliderFloat(T(TKEY("sharpness"), "Sharpness"), &settings.sharpnessDLSS, 0.0f, 1.0f, "%.1f");
 
