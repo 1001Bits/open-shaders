@@ -126,6 +126,10 @@ public:
 		float a_motionVectorScaleX, float a_motionVectorScaleY, float a_sharpness);
 
 private:
+	// Bounded poll for GPU idle before destroying the host FSR3 context; see
+	// RuntimeUpscaler.cpp for the shared D3D11 fence-poll primitive.
+	void WaitForHostFsrIdle();
+
 	// FSR scratch buffer - needs to be freed in DestroyFSRResources
 	void* fsrScratchBuffer = nullptr;
 
