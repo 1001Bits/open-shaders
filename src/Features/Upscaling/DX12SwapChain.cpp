@@ -3,11 +3,11 @@
 #include <FidelityFX/api/include/dx12/ffx_api_dx12.hpp>
 #include <dxgi1_6.h>
 
-#include "Utils/D3D.h"
 #include "../HDRDisplay.h"
 #include "../Upscaling.h"
 #include "FidelityFX.h"
 #include "Streamline.h"
+#include "Utils/D3D.h"
 
 void DX12SwapChain::CreateD3D12Device(IDXGIAdapter* a_adapter)
 {
