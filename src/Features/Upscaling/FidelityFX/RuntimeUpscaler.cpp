@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "../../../GpuPass.h"
 #include "../../../State.h"
 #include "../../Upscaling.h"
 #include "../DX12SwapChain.h"
@@ -1351,16 +1352,8 @@ bool FidelityFX::DispatchRuntimeUpscalerSingle(uint32_t a_contextIndex, ID3D11Re
 	if (!commandAllocator || !commandList)
 		return false;
 
-	const bool annotateDispatch = state && state->frameAnnotations;
-	if (annotateDispatch) {
-		if (globals::game::isVR) {
-			char buf[32];
-			snprintf(buf, sizeof(buf), "FSR Runtime Eye %u", a_contextIndex);
-			state->BeginPerfEvent(buf);
-		} else {
-			state->BeginPerfEvent("FSR Runtime Dispatch");
-		}
-	}
+	const std::string dispatchPassName = globals::game::isVR ? std::format("Upscaling::RuntimeUpscalerDispatch Eye {}", a_contextIndex) : "Upscaling::RuntimeUpscalerDispatch";
+	CS_GPU_PASS(dispatchPassName);
 
 	bool dispatchOk = false;
 	bool commandListSubmitted = false;
@@ -1509,9 +1502,6 @@ bool FidelityFX::DispatchRuntimeUpscalerSingle(uint32_t a_contextIndex, ID3D11Re
 		dispatchOk = false;
 	}
 
-	if (annotateDispatch)
-		state->EndPerfEvent();
-
 	return dispatchOk;
 }
 
@@ -1612,15 +1602,8 @@ bool FidelityFX::UpscaleRegion(uint32_t a_contextIndex, ID3D11Resource* a_color,
 		runtimeRequested ? RuntimeUpscalerFramePath::kHostFsr31Fallback : RuntimeUpscalerFramePath::kHostFsr31;
 	RecordRuntimeUpscalerFramePath(fallbackFramePath);
 
-	if (state->frameAnnotations) {
-		if (globals::game::isVR) {
-			char buf[32];
-			snprintf(buf, sizeof(buf), "FSR Dispatch Eye %u", a_contextIndex);
-			state->BeginPerfEvent(buf);
-		} else {
-			state->BeginPerfEvent("FSR Dispatch");
-		}
-	}
+	const std::string dispatchPassName = globals::game::isVR ? std::format("Upscaling::HostFsr3Dispatch Eye {}", a_contextIndex) : "Upscaling::HostFsr3Dispatch";
+	CS_GPU_PASS(dispatchPassName);
 
 	FfxFsr3DispatchUpscaleDescription dispatchParameters{};
 	dispatchParameters.commandList = ffxGetCommandListDX11(context);
@@ -1652,9 +1635,6 @@ bool FidelityFX::UpscaleRegion(uint32_t a_contextIndex, ID3D11Resource* a_color,
 	dispatchParameters.flags = 0;
 
 	const bool dispatchOK = DispatchHostFsr3UpscaleProtected(fsrContext[a_contextIndex], dispatchParameters);
-
-	if (state->frameAnnotations)
-		state->EndPerfEvent();
 
 	return dispatchOK;
 }
