@@ -1,10 +1,6 @@
-// Runtime upscaler provider (amd_fidelityfx_upscaler_dx12.dll) support, transplanted from
-// ParticleTroned's fork (cs-1.7-PL-VR branch, FidelityFX_VR.cpp). Detects an AMD RDNA4
-// adapter and, when enabled, dispatches upscaling through the runtime-loaded DLL (FSR4 or
-// a runtime FSR3 provider) via the generic ffx-api instead of the host-linked FSR3 SDK,
-// falling back to the host SDK path on any failure. Split out from FidelityFX.cpp
-// following the LightLimitFix/*.cpp convention: these are additional method definitions
-// on the FidelityFX class declared in ../FidelityFX.h.
+// Runtime FSR4/FSR3-provider DLL path (falls back to the host SDK on any failure).
+// Transplanted from ParticleTroned's fork (cs-1.7-PL-VR, FidelityFX_VR.cpp); split into its
+// own file per the LightLimitFix/*.cpp convention -- these are FidelityFX methods.
 
 #include "../FidelityFX.h"
 
@@ -25,6 +21,28 @@ extern ffxFunctions ffxModule;
 
 // Defined in FidelityFX.cpp; used by UpscaleRegion's host-FSR3 fallback path below.
 FfxResource ffxGetResource(ID3D11Resource* dx11Resource, wchar_t const* ffxResName, FfxResourceStates state = FFX_RESOURCE_STATE_PIXEL_COMPUTE_READ);
+
+namespace
+{
+	void EnsureFidelityFxDllDirectory();
+}
+
+// Used by FidelityFX::LoadFFX() (FidelityFX.cpp) to load amd_fidelityfx_upscaler_dx12.dll
+// so it can resolve sibling loader/framegen DLLs in the same plugin directory.
+HMODULE LoadFidelityFxDllSafe(const std::wstring& a_path)
+{
+	EnsureFidelityFxDllDirectory();
+
+	constexpr DWORD kLoadFlags =
+		LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
+		LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+		LOAD_LIBRARY_SEARCH_USER_DIRS;
+
+	if (auto module = LoadLibraryExW(a_path.c_str(), nullptr, kLoadFlags))
+		return module;
+
+	return LoadLibraryW(a_path.c_str());
+}
 
 namespace
 {
@@ -98,6 +116,27 @@ namespace
 	bool UseSplitPerEyeFSRContexts()
 	{
 		return globals::game::isVR;
+	}
+
+	void* s_fidelityFxDllDirectoryCookie = nullptr;
+
+	// Registers PluginDir as a DLL search directory -- plain LoadLibrary won't find
+	// sibling loader/framegen DLLs there under safe DLL search mode.
+	void EnsureFidelityFxDllDirectory()
+	{
+		if (s_fidelityFxDllDirectoryCookie)
+			return;
+
+		auto kernel32 = GetModuleHandleW(L"kernel32.dll");
+		if (!kernel32)
+			return;
+
+		using AddDllDirectoryFn = void*(WINAPI*)(PCWSTR);
+		auto addDllDirectory = reinterpret_cast<AddDllDirectoryFn>(GetProcAddress(kernel32, "AddDllDirectory"));
+		if (!addDllDirectory)
+			return;
+
+		s_fidelityFxDllDirectoryCookie = addDllDirectory(FidelityFX::PluginDir);
 	}
 
 	bool TryGetTexture2DDesc(ID3D11Resource* a_resource, D3D11_TEXTURE2D_DESC& a_outDesc)
@@ -410,6 +449,23 @@ void FidelityFX::ResetFSRIdleFence()
 	ReleaseD3D11IdleFence(pendingFSRResourceFreeIdleFence);
 	pendingRuntimeTeardownD3D11FenceValue = 0;
 	pendingRuntimeTeardownD3D12FenceValue = 0;
+}
+
+void FidelityFX::WaitForHostFsrIdle()
+{
+	// Bounded poll before ffxFsr3ContextDestroy -- the GPU may still have in-flight FSR3
+	// work referencing the context being torn down.
+	const ULONGLONG waitStart = GetTickCount64();
+	while (true) {
+		const auto result = BeginOrPollD3D11IdleFence(globals::d3d::context, pendingFSRResourceFreeIdleFence);
+		if (result != D3D11IdleFenceResult::Pending)
+			break;
+
+		if (GetTickCount64() - waitStart >= 5000)
+			break;
+
+		Sleep(1);
+	}
 }
 
 bool FidelityFX::HasRuntimeUpscalerSupportCheckResult() const
@@ -1538,7 +1594,10 @@ bool FidelityFX::UpscaleRegion(uint32_t a_contextIndex, ID3D11Resource* a_color,
 	if (!runtimeRequested)
 		runtimeFallbackResetDispatchesRemaining = 0;
 
-	if (!fsrScratchBuffer || a_contextIndex >= std::size(fsrContext))
+	// std::size(fsrContext) is always 2; only fsrContext[0] is initialized in flat mode
+	// (CreateFSRResources' numContexts), so check against the actually-created count.
+	const uint32_t hostContextCount = globals::game::isVR ? 2u : 1u;
+	if (!fsrScratchBuffer || a_contextIndex >= hostContextCount)
 		return false;
 
 	auto context = globals::d3d::context;

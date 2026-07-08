@@ -12,6 +12,10 @@ ffxFunctions ffxModule;
 
 std::vector<std::pair<std::string, std::string>> FidelityFX::dllVersions = {};
 
+// Defined in RuntimeUpscaler.cpp; registers PluginDir as a DLL search directory so the
+// runtime upscaler DLL can resolve sibling loader/framegen DLLs there.
+HMODULE LoadFidelityFxDllSafe(const std::wstring& a_path);
+
 void FidelityFX::LoadFFX()
 {
 	// Load uframe generation DLL and its function pointers
@@ -21,7 +25,7 @@ void FidelityFX::LoadFFX()
 
 	// Optional runtime-substitutable upscaler DLL (incl. FSR4 on RDNA4). See RuntimeUpscaler.cpp.
 	std::wstring runtimeUpscalerPath = std::wstring(FidelityFX::PluginDir) + L"\\" + std::wstring(FidelityFX::RuntimeUpscalerDllName);
-	runtimeUpscalerModule = LoadLibrary(runtimeUpscalerPath.c_str());
+	runtimeUpscalerModule = LoadFidelityFxDllSafe(runtimeUpscalerPath);
 	featureRuntimeUpscaler = runtimeUpscalerModule != nullptr;
 	if (featureRuntimeUpscaler) {
 		logger::info("[FidelityFX] Runtime upscaler DLL found and available");
@@ -334,6 +338,9 @@ void FidelityFX::CreateFSRResources()
 
 void FidelityFX::DestroyFSRResources()
 {
+	WaitForHostFsrIdle();
+	ResetFSRIdleFence();
+
 	uint32_t numContexts = globals::game::isVR ? 2 : 1;
 	for (uint32_t i = 0; i < numContexts; ++i) {
 		if (ffxFsr3ContextDestroy(&fsrContext[i]) != FFX_OK)
@@ -386,6 +393,12 @@ void FidelityFX::Upscale(ID3D11Resource* a_upscalingTexture, ID3D11Resource* a_r
 	auto& upscaling = globals::features::upscaling;
 	auto jitter = upscaling.jitter;
 
+	// state->screenSize is polluted to renderRes under PerfMode's hook -- mirror
+	// CreateFSRResources' dlssperfActive check or the upscale target size is wrong.
+	auto& perfMode = upscaling.perfMode;
+	const bool dlssperfActive = perfMode.IsHookActive();
+	const auto displaySize = dlssperfActive ? perfMode.GetDisplayScreenSize() : screenSize;
+
 	// Default to in-place output when caller didn't supply a separate destination.
 	if (!a_colorOut)
 		a_colorOut = a_upscalingTexture;
@@ -403,18 +416,19 @@ void FidelityFX::Upscale(ID3D11Resource* a_upscalingTexture, ID3D11Resource* a_r
 			}
 		}
 
-		// Per-eye display bounds for VR (screenSize.x covers both eyes side-by-side);
-		// full-screen bounds otherwise, matching r_width's existing per-eye/full split.
-		const uint32_t displayWidth = globals::game::isVR ? (uint32_t)(screenSize.x / 2) : (uint32_t)screenSize.x;
-		const uint32_t displayHeight = (uint32_t)screenSize.y;
+		const uint32_t displayWidth = (uint32_t)(globals::game::isVR ? displaySize.x / 2 : displaySize.x);
+		const uint32_t displayHeight = (uint32_t)displaySize.y;
 
-		if (!UpscaleRegion(contextIndex, r_color, r_depth, r_mvec, r_reactive, r_trans, r_output,
-				r_width, (uint32_t)renderSize.y, displayWidth, displayHeight,
-				mv_scale_x, renderSize.y, a_sharpness))
+		const bool dispatched = UpscaleRegion(contextIndex, r_color, r_depth, r_mvec, r_reactive, r_trans, r_output,
+			r_width, (uint32_t)renderSize.y, displayWidth, displayHeight,
+			mv_scale_x, renderSize.y, a_sharpness);
+		if (!dispatched)
 			logger::critical("[FidelityFX] Failed to dispatch upscaling for eye {}!", contextIndex);
 
 		if (state->frameAnnotations)
 			state->EndPerfEvent();
+
+		return dispatched;
 	};
 
 	if (globals::game::isVR) {
@@ -423,21 +437,25 @@ void FidelityFX::Upscale(ID3D11Resource* a_upscalingTexture, ID3D11Resource* a_r
 
 		uint32_t numViews = 2;
 		uint32_t eyeWidth = (uint32_t)(renderSize.x / 2);
+		bool allEvaluated = true;
 		for (uint32_t i = 0; i < numViews; ++i) {
-			DispatchFSR(i,
-				upscaling.vrIntermediateColorIn[i]->resource.get(),
-				upscaling.vrIntermediateLinearDepth[i]->resource.get(),
-				upscaling.vrIntermediateMotionVectors[i]->resource.get(),
-				upscaling.vrIntermediateReactiveMask[i]->resource.get(),
-				upscaling.vrIntermediateTransparencyMask[i]->resource.get(),
-				upscaling.vrIntermediateColorOut[i]->resource.get(),
-				eyeWidth,
-				renderSize.x / 2.0f);
+			if (!DispatchFSR(i,
+					upscaling.vrIntermediateColorIn[i]->resource.get(),
+					upscaling.vrIntermediateLinearDepth[i]->resource.get(),
+					upscaling.vrIntermediateMotionVectors[i]->resource.get(),
+					upscaling.vrIntermediateReactiveMask[i]->resource.get(),
+					upscaling.vrIntermediateTransparencyMask[i]->resource.get(),
+					upscaling.vrIntermediateColorOut[i]->resource.get(),
+					eyeWidth,
+					renderSize.x / 2.0f))
+				allEvaluated = false;
 		}
 
 		// Merge outputs into the supplied displayRes destination (kMAIN by default;
-		// perfMode.testTexture when PerfMode has shrunk the engine RTs).
-		upscaling.FinalizePerEyeOutputs(a_colorOut);
+		// perfMode.testTexture when PerfMode has shrunk the engine RTs). Skip on a failed
+		// eye -- FinalizePerEyeOutputs would otherwise merge an unwritten/stale eye texture.
+		if (allEvaluated)
+			upscaling.FinalizePerEyeOutputs(a_colorOut);
 	} else {
 		DispatchFSR(0,
 			a_upscalingTexture,
