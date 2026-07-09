@@ -1,6 +1,5 @@
-// Runtime FSR4/FSR3-provider DLL path (falls back to the host SDK on any failure).
-// Transplanted from ParticleTroned's fork (cs-1.7-PL-VR, FidelityFX_VR.cpp); split into its
-// own file per the LightLimitFix/*.cpp convention -- these are FidelityFX methods.
+// Runtime FSR4/FSR3-provider DLL path (falls back to the host SDK on any failure). Split
+// into its own file per the LightLimitFix/*.cpp convention -- these are FidelityFX methods.
 
 #include "../FidelityFX.h"
 
@@ -443,6 +442,7 @@ namespace
 
 FidelityFX::~FidelityFX()
 {
+	ReleaseRuntimeUpscalerResourcesForRelatch();
 	ResetFSRIdleFence();
 }
 

@@ -44,7 +44,6 @@ public:
 	FfxFsr3Context fsrContext[2];
 
 	bool featureFSR3FG = false;
-	// Whether amd_fidelityfx_upscaler_dx12.dll was found and loaded alongside the loader/framegen DLLs.
 	bool featureRuntimeUpscaler = false;
 
 	// Track if FidelityFX is currently being used for frame generation
@@ -80,17 +79,12 @@ public:
 	/** @brief Destroys FSR3 upscaling resources and frees the scratch buffer. */
 	void DestroyFSRResources();
 
-	// a_colorOut is the destination for the upscaled result. When nullptr, output is written
-	// back into a_upscalingTexture (legacy in-place behavior). Callers route a separate output
-	// when the engine's kMAIN is renderRes (e.g., PerfMode VR mode) and the upscaled result
-	// must land in a displayRes target.
+	// a_colorOut, if non-null, redirects the upscaled result to a displayRes target instead
+	// of writing back into a_upscalingTexture (needed when kMAIN is renderRes, e.g. PerfMode).
 	void Upscale(ID3D11Resource* a_upscalingTexture, ID3D11Resource* a_reactiveMask, ID3D11Resource* a_transparencyCompositionMask, ID3D11Resource* a_motionVectors, float a_sharpness, ID3D11Resource* a_colorOut = nullptr);
 
-	// --- Runtime upscaler provider (amd_fidelityfx_upscaler_dx12.dll), transplanted from
-	// ParticleTroned's fork. Detects an AMD RDNA4 adapter and, when enabled, dispatches
-	// upscaling through the runtime-loaded DLL (FSR4 or a runtime FSR3 provider) via the
-	// generic ffx-api instead of the host-linked FSR3 SDK, falling back to the host SDK
-	// path on any failure. See RuntimeUpscaler.cpp.
+	// Runtime upscaler provider (amd_fidelityfx_upscaler_dx12.dll): on eligible AMD hardware,
+	// dispatches via the runtime DLL instead of the host FSR3 SDK. See RuntimeUpscaler.cpp.
 	bool IsAmdAdapterDetected() const;
 	bool IsNvidiaAdapterDetected() const;
 	bool IsRuntimeUpscalerPresent() const;
@@ -117,9 +111,7 @@ public:
 	void ResetFSRIdleFence();
 	void ResetRuntimeUpscalerResources(bool a_invalidateProviderCache = false);
 
-	// Dispatches upscaling for a single context/eye at explicit render/display extents,
-	// choosing between the runtime upscaler provider and the host FSR3 SDK. Used by
-	// Upscale() as the per-context dispatch primitive.
+	// Per-context/eye dispatch primitive used by Upscale(); chooses runtime vs host FSR3.
 	bool UpscaleRegion(uint32_t a_contextIndex, ID3D11Resource* a_color, ID3D11Resource* a_depth, ID3D11Resource* a_motionVectors,
 		ID3D11Resource* a_reactiveMask, ID3D11Resource* a_transparencyCompositionMask, ID3D11Resource* a_output,
 		uint32_t a_renderWidth, uint32_t a_renderHeight, uint32_t a_displayWidth, uint32_t a_displayHeight,

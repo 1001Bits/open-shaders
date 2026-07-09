@@ -451,8 +451,7 @@ void Upscaling::DrawSettings()
 
 		if (upscaleMethod == UpscaleMethod::kFSR) {
 			ImGui::SliderFloat(T(TKEY("sharpness"), "Sharpness"), &settings.sharpnessFSR, 0.0f, 1.0f, "%.1f");
-			// Unverified on real RDNA4 hardware -- hidden entirely on ineligible GPUs so it
-			// can't be toggled somewhere it would silently no-op.
+			// Hidden entirely on ineligible GPUs so it can't be toggled somewhere it silently no-ops.
 			if (fidelityFX.IsRuntimeFsr4AutoEligible()) {
 				ImGui::Checkbox(T(TKEY("fsr4_runtime_enable"), "Use Runtime FSR4 (RDNA4)"), &settings.fsr4RuntimeEnable);
 				if (settings.fsr4RuntimeEnable) {
