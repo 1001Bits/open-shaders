@@ -30,6 +30,7 @@
 #include "TruePBR.h"
 #include "Utils/FileSystem.h"
 #include "Utils/SphericalHarmonics.h"
+#include "VRAPI/CSpluginapi.h"
 #include "WeatherManager.h"
 #include "WeatherVariableRegistry.h"
 
@@ -198,6 +199,9 @@ void State::Debug()
  */
 void State::Reset()
 {
+	// Land staged SKSE API setter writes before features consume settings this frame.
+	CSPluginAPI::ProcessStagedSettings();
+
 	globals::profiler->EndFrame();
 
 	Feature::ForEachLoadedFeature("Reset", [](Feature* feature) { feature->Reset(); });
