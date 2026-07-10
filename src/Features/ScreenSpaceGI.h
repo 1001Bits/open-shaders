@@ -94,8 +94,9 @@ public:
 		bool EnableAdaptiveSampling = false;
 		int ResolutionMode = 1;  // 0-full, 1-half, 2-quarter - DBF default
 		// Restart-gated: GI history/radiance textures are only allocated for the full
-		// profile. Defaults to full everywhere; LoadSettings migrates GI-off configs.
-		int ResourceProfile = kResourceProfileFullGI;
+		// profile. VR defaults lean to match its GI-off default; LoadSettings
+		// migrates GI-off configs.
+		int ResourceProfile = REL::Module::IsVR() ? kResourceProfileAOOnly : kResourceProfileFullGI;
 		// visual
 		float MinScreenRadius = 0.01f;
 		float AORadius = 256.f;
@@ -124,7 +125,7 @@ public:
 	} settings;
 
 	// Resource profile active since resource creation; a differing settings value is restart-pending.
-	int activeResourceProfile = kResourceProfileFullGI;
+	int activeResourceProfile = REL::Module::IsVR() ? kResourceProfileAOOnly : kResourceProfileFullGI;
 
 	bool HasGIResources() const { return activeResourceProfile == kResourceProfileFullGI; }
 	bool IsGIActive() const { return settings.EnableGI && HasGIResources(); }

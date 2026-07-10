@@ -135,6 +135,8 @@ void ScreenSpaceGI::DrawSettings()
 			auto ilToggleGuard = Util::DisableGuard(!settings.Enabled || !HasGIResources());
 			recompileFlag |= ImGui::Checkbox(T(TKEY("indirect_lighting"), "Indirect Lighting (IL)"), &settings.EnableGI);
 		}
+		if (settings.Enabled && !HasGIResources())
+			Util::Text::Disabled(T(TKEY("indirect_lighting_needs_full"), "Switch Effects Resources to 'AO + GI Resources' and restart to use this."));
 		ImGui::TableNextColumn();
 		{
 			auto vanillaSSAOGuard = Util::DisableGuard(globals::game::isVR);

@@ -1584,6 +1584,7 @@
     "feature.screen_space_gi.il_saturation": "IL Saturation",
     "feature.screen_space_gi.il_source_brightness": "IL Source Brightness",
     "feature.screen_space_gi.indirect_lighting": "Indirect Lighting (IL)",
+    "feature.screen_space_gi.indirect_lighting_needs_full": "Switch Effects Resources to 'AO + GI Resources' and restart to use this.",
     "feature.screen_space_gi.key_feature_1": "Realistic indirect lighting",
     "feature.screen_space_gi.key_feature_2": "Enhanced ambient occlusion",
     "feature.screen_space_gi.key_feature_3": "Improved visual depth and atmosphere",
