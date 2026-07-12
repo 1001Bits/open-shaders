@@ -94,7 +94,13 @@ float2 GetParallaxCoords(float distance, float2 coords, float mipLevel, float3 v
 	weights[5] = input.LandBlendWeights2.y;
 #endif
 
+	// Interlayer parallax must always march regardless of distance; it isn't a
+	// simple surface-height effect and has no distance-cheap approximation.
+#if !defined(LANDSCAPE) && defined(TRUE_PBR)
+	if (nearBlendToFar >= 1.0 && (PBRFlags & PBR::Flags::InterlayerParallax) == 0) {
+#else
 	if (nearBlendToFar >= 1.0) {
+#endif
 		pixelOffset = 0.0;
 		return coords;
 	}
