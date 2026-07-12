@@ -1250,7 +1250,7 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace : SV_IsFrontFace)
 		{
 			terrainShadowMipLevels[terrainMipIndex] = min(mipLevels[terrainMipIndex], ExtendedMaterials::TerrainParallaxShadowMaxMipLevel);
 #			if defined(TERRAIN_VARIATION)
-			InitTerrainParallaxStochasticFade(terrainMipIndex, mipLevels[terrainMipIndex]);
+			InitTerrainParallaxStochasticFade(terrainMipIndex);
 #			endif
 		}
 
@@ -1329,15 +1329,14 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace : SV_IsFrontFace)
 #	endif
 
 #	if defined(LANDSCAPE)
-	float landDistanceTexMipBias = 0.0;
 #		if defined(TERRAIN_VARIATION)
 	g_terrainStochasticGrad = ComputeTerrainGradients(uv);
-	InitTerrainStochasticMip(0, TexColorSampler, landDistanceTexMipBias);
-	InitTerrainStochasticMip(1, TexLandColor2Sampler, landDistanceTexMipBias);
-	InitTerrainStochasticMip(2, TexLandColor3Sampler, landDistanceTexMipBias);
-	InitTerrainStochasticMip(3, TexLandColor4Sampler, landDistanceTexMipBias);
-	InitTerrainStochasticMip(4, TexLandColor5Sampler, landDistanceTexMipBias);
-	InitTerrainStochasticMip(5, TexLandColor6Sampler, landDistanceTexMipBias);
+	InitTerrainStochasticMip(0);
+	InitTerrainStochasticMip(1);
+	InitTerrainStochasticMip(2);
+	InitTerrainStochasticMip(3);
+	InitTerrainStochasticMip(4);
+	InitTerrainStochasticMip(5);
 #		endif
 #		if !defined(TERRAIN_VARIATION)
 #			define SampleTerrain(TEX, SAMP, UV, OFFSET, EXTRA_BIAS) TEX.SampleBias(SAMP, UV, SharedData::MipBias + EXTRA_BIAS)
