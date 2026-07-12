@@ -1337,8 +1337,9 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace : SV_IsFrontFace)
 	InitTerrainStochasticMip(3);
 	InitTerrainStochasticMip(4);
 	InitTerrainStochasticMip(5);
-#		endif
-#		if !defined(TERRAIN_VARIATION)
+#		else
+	// Used as the fallback SampleTerrain's extra mip bias below (no stochastic offsets to bias with here).
+	float landDistanceTexMipBias = 0.0;
 #			define SampleTerrain(TEX, SAMP, UV, OFFSET, EXTRA_BIAS) TEX.SampleBias(SAMP, UV, SharedData::MipBias + EXTRA_BIAS)
 #		endif
 #		if defined(TRUE_PBR)
