@@ -1,6 +1,7 @@
 // depth-aware upsampling: https://gist.github.com/pixelmager/a4364ea18305ed5ca707d89ddc5f8743
 
 #include "Common/FastMath.hlsli"
+#include "Common/VR.hlsli"
 #include "ScreenSpaceGI/common.hlsli"
 
 Texture2D<half> srcDepth : register(t0);
@@ -67,6 +68,12 @@ RWTexture2D<half4> outGiSpecular : register(u3);
 	else
 	{
 		float2 uv = (dtid + .5) * RcpFrameDim * OUT_FRAME_DIM * RcpTexDim;
+#ifdef VR
+		// Unclamped, a bilinear sample this close to the packed-stereo seam can read the
+		// other eye's texel whenever TexDim (the allocation) exceeds OUT_FRAME_DIM (the
+		// active region), producing right-eye AO flicker under foveated/dynamic-res scaling.
+		uv = ClampPackedUVToEye(uv, Stereo::GetEyeIndexFromTexCoord(uv), OUT_FRAME_DIM, TexDim);
+#endif
 		ao = srcAo.SampleLevel(samplerLinearClamp, uv, 0);
 		y = srcIlY.SampleLevel(samplerLinearClamp, uv, 0);
 		coCg = srcIlCoCg.SampleLevel(samplerLinearClamp, uv, 0);

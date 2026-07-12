@@ -86,6 +86,23 @@ float2 filterInf(float2 v) { return float2(filterInf(v.x), filterInf(v.y)); }
 float3 filterInf(float3 v) { return float3(filterInf(v.x), filterInf(v.y), filterInf(v.z)); }
 float4 filterInf(float4 v) { return float4(filterInf(v.x), filterInf(v.y), filterInf(v.z), filterInf(v.w)); }
 
+#ifdef VR
+// Clamps a normalized UV into one eye's half of a packed stereo texture, in the texture's own
+// UV space (packedTexDim), not the active frame's -- a bilinear SampleLevel using frameDim-only
+// bounds bleeds across the eye seam whenever the allocated texture is larger than the frame in use.
+float2 ClampPackedUVToEye(float2 uv, uint eyeIndex, float2 packedFrameDim, float2 packedTexDim)
+{
+	const uint eyeWidth = max(1u, (uint)round(packedFrameDim.x * 0.5));
+	const float safeTexWidth = max(packedTexDim.x, 1.0);
+	const float safeTexHeight = max(packedTexDim.y, 1.0);
+	const float minX = ((float)(eyeWidth * eyeIndex) + 0.5) / safeTexWidth;
+	const float maxX = ((float)(eyeWidth * (eyeIndex + 1)) - 0.5) / safeTexWidth;
+	const float minY = 0.5 / safeTexHeight;
+	const float maxY = (packedFrameDim.y - 0.5) / safeTexHeight;
+	return clamp(uv, float2(minX, minY), float2(maxX, maxY));
+}
+#endif
+
 // screenPos - normalised position in FrameDim, one eye only
 // uv - normalised position in FrameDim, both eye
 // texCoord - texture coordinate
